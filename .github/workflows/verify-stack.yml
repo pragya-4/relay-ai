@@ -1,0 +1,36 @@
+name: Verify Docker stack
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start both containers with offline fixture credentials
+        run: |
+          cp .env.example .env
+          sed -i 's/^LLM_API_KEYS=.*/LLM_API_KEYS=offline-one,offline-two/' .env
+          make up
+      - name: Check ports, failure isolation and SQLite volume persistence
+        run: |
+          curl --retry 40 --retry-all-errors --retry-delay 2 -fsS http://localhost:8000/health | jq -e '.status=="ok" and .keys_configured==2 and .cache_enabled'
+          curl -fsS http://localhost:3000 | grep -q 'Relay AI'
+          status=$(curl -sS -o /tmp/error.json -w '%{http_code}' http://localhost:8000/chat -H 'Content-Type: application/json' -H 'X-Simulate-Failure: *=429' -d '{"session_id":"failed","message":"Hello"}')
+          test "$status" = 503
+          jq -e '.detail=="all providers unavailable"' /tmp/error.json
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/sessions/failed/messages)" = 404
+          docker compose exec -T backend python - <<'PY'
+          import sqlite3
+          with sqlite3.connect('/data/app.db') as con:
+              con.execute("INSERT INTO sessions(id,prompt) VALUES (?,?)", ("volume-probe","probe"))
+          PY
+          docker compose up -d --force-recreate backend
+          curl --retry 40 --retry-all-errors --retry-delay 2 -fsS http://localhost:8000/sessions/volume-probe/messages | jq -e '.session_id=="volume-probe" and .messages==[]'
+      - name: Stop the stack
+        if: always()
+        run: make down
