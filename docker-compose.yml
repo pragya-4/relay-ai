@@ -1,0 +1,18 @@
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/app.db}
+      PORT: 8000
+    ports: ["8000:8000"]
+    volumes: ["relay_data:/data"]
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    ports: ["3000:80"]
+    depends_on: [backend]
+volumes:
+  relay_data:
