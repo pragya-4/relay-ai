@@ -1,35 +1,26 @@
-# Relay AI demo recording script (2–3 minutes)
+# Relay AI · 2 minute 40 second recording script
 
-Record your own screen and voice only after live URLs are added and the acceptance checklist passes. Replace each bracketed value with a real, reachable URL. Do not show `.env`, API keys, or private prompts. No synthetic recording is included.
+Open the [chat](https://relay-ai-shashwat-tripathi.gauzyadage64.chatgpt.site), [health endpoint](https://relay-backend-production-4a042940.up.railway.app/health) and [repository](https://github.com/pragya-4/relay-ai) in separate tabs. Open a PowerShell terminal. Hide dashboards, secrets, notifications and unrelated tabs. Use a new four-digit run label each time, including after a rehearsal. The candidate speaks the narration.
 
-## 0:00–0:20 — Introduce the deployed app
+| Time | Action | Say |
+|---|---|---|
+| 0:00–0:15 | Show the public chat and health indicator. | “I’m Shashwat Tripathi. I built Relay AI to keep a conversation going when a provider key fails and to show exactly how each reply was produced.” |
+| 0:15–0:40 | Send **Run 9286. Answer in one word: what color is an emerald?** Replace 9286 with your fresh label. Point at the reply metadata. | “This answer came from Gemini. Here are the model, responding key, server latency, and the tokens used for this turn.” Read the actual values. |
+| 0:40–1:02 | Select **New conversation**. Paste the identical first prompt. | “This is a different session with the same model and complete prompt. LiteLLM returned the stored reply. The usage matches the first response. There’s no responding key on a cache hit.” Read the new latency. |
+| 1:02–1:27 | Select **Key 1 · rate limit**. Send **Name one moon of Jupiter.** Show key_2 and one fallback. | “The selector sends the request-local X-Simulate-Failure header. The first key behaves as if it returned 429. Key two still makes a real inference request.” |
+| 1:27–1:45 | Select **All keys unavailable**. Send **Remember this code: cedar-9286.** Show the error, then retry the restored input under normal inference. | “All keys failing produces a readable 503. The failed turn wasn’t stored. The next request can use the pool normally.” |
+| 1:45–2:08 | Ask **Which exact code did I ask you to remember?** Switch to PowerShell and show the history request below. | “The client sent just the new message. FastAPI loaded the session’s earlier turns from SQLite. The history endpoint returns those turns in chronological order.” |
+| 2:08–2:40 | Show health, then the repository’s Compose file and Docker workflow. | “Health checks the database and the configured key pool. SQLite is mounted at /data. I keep one worker because the locks and response cache are process-local. Successful message pairs are committed together so a failed provider call leaves history intact.” |
 
-Open https://relay-ai-shashwat-tripathi.gauzyadage64.chatgpt.site in a private browser window.
+## Prepare PowerShell before recording
 
-Say: “This is Relay AI, a React chat client backed by FastAPI, LiteLLM, and SQLite. The backend keeps the session history, and the client sends only each new message.”
+```powershell
+$api = 'https://relay-backend-production-4a042940.up.railway.app'
+$sid = 'video-' + [guid]::NewGuid().ToString()
+$body = @{session_id=$sid; message='Name one moon of Jupiter.'} | ConvertTo-Json
+Invoke-RestMethod "$api/health"
+Invoke-RestMethod "$api/chat" -Method Post -Headers @{'X-Simulate-Failure'='key_1=500'} -ContentType 'application/json' -Body $body | ConvertTo-Json -Depth 5
+Invoke-RestMethod "$api/sessions/$sid/messages" | ConvertTo-Json -Depth 6
+```
 
-## 0:20–0:50 — Live inference and cache
-
-Pick a fresh run label such as the current time, then send `Run <label>: What is the capital of France?` and point out the live source, model, latency, and per-request token counts. Select **New conversation**, submit the exact same text, and show the identical reply marked `LLM_CACHE` with null provider key and matching token counts.
-
-Say: “The cache key uses the model and complete message history, not the session ID, so the identical first turn can reuse a response across sessions.”
-
-## 0:50–1:20 — Real key fallback through the test hook
-
-Select **Key 1 · rate limit**, send a unique question, and show a real reply marked `key_2` with one fallback attempt. Repeat with **Key 1 · server error** and a fresh prompt.
-
-Say: “The request-local header simulates one failed key; the gateway calls LiteLLM with the next key alias. The answer itself still comes from Gemini.”
-
-## 1:20–1:40 — Exhaustion and recovery
-
-Select **All keys unavailable**, send a fresh prompt, and show the readable 503 with no assistant answer. Select **Normal inference**, send a new prompt, and show recovery.
-
-## 1:40–2:10 — API and persistence
-
-Show `[PUBLIC_BACKEND_URL]/health`, then use PowerShell/Postman/curl to call `POST /chat` and `GET /sessions/{session_id}/messages`. Show the successful user/assistant pair in chronological order and assistant metadata. Do not put credentials in command history or the recording.
-
-## 2:10–2:40 — Code and honest limits
-
-Show the public repository, Dockerfiles, named `relay_data` volume, and `VERIFICATION.md`. Mention that SQLite history lives on the persistent volume and that the in-memory cache and session locks require one worker, and describe any remaining limitations accurately.
-
-End by showing `[PUBLIC_FRONTEND_URL]` and `[PUBLIC_BACKEND_URL]` in the browser address bar. Upload the recording to a public link and check it in a signed-out/private window before submitting.
+This terminal example uses its own session. To show the UI session instead, copy its full session_id from the chat request in the browser’s Network panel and use it in the final command. Upload the narrated recording and open its link signed out before adding it to SUBMISSION.md.

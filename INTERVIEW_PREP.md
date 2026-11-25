@@ -29,6 +29,21 @@ The React client creates a fresh session ID on page load and sends only the curr
 
 **How are tokens counted?**  The assistant response's provider usage values describe that completion; the application does not sum prior turns. Cache hits retain the same usage object.
 
-**What caused the inference failure?** The earlier 404 has no confirmed root cause. In this revision a reproducible local adapter failure occurred before HTTP because the configured model rejects the temperature override. The backend default also disagreed with the environment template. We corrected both and exercised the actual Gemini adapter with fixture responses. Both rotated keys subsequently generated real answers through the local FastAPI app. A fresh-session replay reported 0 ms after rounding versus 7746 ms live, with identical 29/7 token usage. Public backend acceptance remains outstanding.
+**What caused the inference failure?** The earlier 404 has no confirmed root cause. In this revision a reproducible local adapter failure occurred before HTTP because the configured model rejects the temperature override. The backend default also disagreed with the environment template. We corrected both and exercised the actual Gemini adapter with fixture responses. Both rotated keys subsequently generated real answers through the local FastAPI app. A fresh-session replay reported 0 ms after rounding versus 7746 ms live, with identical 29/7 token usage. See VERIFICATION.md for the deployed backend and browser results.
 
 **What evidence would convince you that failover works?** At the HTTP boundary, record a synthetic 429 for the first key and watch the next connection use the second key. Compare the reported alias and count. In production, use the request-local header to skip key one and require a substantive provider reply through key two. Check VERIFICATION.md for which step has run.
+
+## Implementation details to explain at the whiteboard
+
+| Question | Answer |
+|---|---|
+| Why LiteLLM? | The Gemini adapter normalizes completion text and usage. Named Router deployments and the built-in Cache let our code select an explicit credential and reuse a response without a separate cache service. |
+| How do you measure latency? | The route starts a monotonic performance timer, resolves history and the gateway response, then rounds elapsed time to integer milliseconds before writing the pair. Browser/network time and the final SQLite write are outside the reported latency. |
+| What does WAL buy you? | SQLite appends committed changes to its write-ahead log while readers can retain a snapshot. Writers still serialize. Connections have a 15-second busy timeout. |
+| How do sessions stay separate? | Bound SQL parameters scope reads to session_id, ordered by message ID. The system prompt is stored separately; history returns only user and assistant messages. A session ID is a bearer-like identifier, so this demo is unsuitable for sensitive conversations. |
+| Why call Gemini outside the transaction? | Holding SQLite’s writer lock during network I/O would make unrelated sessions wait. The session lock preserves turn order while the database remains free. |
+| How is concurrency handled? | One of 64 session locks serializes turns for a given session. A second set of locks covers identical inference inputs, avoiding simultaneous duplicate fills. Hash collisions can serialize unrelated requests. |
+| What survives restart? | A named Compose volume or mounted Railway volume retains the SQLite file. New processes start with an empty local response cache. |
+| Why configure CORS? | The Vercel and Railway origins differ. The browser preflights JSON POSTs and the simulation header. Railway must return the exact allowed frontend origin; a successful direct API request cannot establish that this works. |
+| How are secrets handled? | Only the backend receives LLM_API_KEYS. Public responses expose aliases. Provider errors are logged by exception type; real keys are excluded from the Git tree. Frontend build variables are public. |
+| How would you scale it? | Measure lock contention, token budget and queue time first. Bound context length and request rates, then introduce cross-worker session coordination, cache sharing and a database suited to concurrent writers if the assignment restrictions are lifted. |

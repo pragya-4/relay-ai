@@ -4,12 +4,12 @@ Relay AI is a React/Vite client with a FastAPI service, LiteLLM Gemini gateway, 
 
 ## 1. Live URLs
 
-The public UI is available. Backend provisioning and live acceptance are pending.
+The submission frontend serves the React build and calls FastAPI on Railway. Desktop and mobile browser acceptance passed on the public URLs below.
 
 - Frontend: https://relay-ai-shashwat-tripathi.gauzyadage64.chatgpt.site
-- Backend: **pending deployment**
+- Backend: https://relay-backend-production-4a042940.up.railway.app
 - Public GitHub repository: https://github.com/pragya-4/relay-ai
-- Demo video: **record after live acceptance checks**
+- Demo video: candidate recording pending
 
 ## 2. Run locally: with Docker and without
 
@@ -133,6 +133,20 @@ A request error returns JSON with a `detail` field. Unknown session history retu
 
 ## Deployment and limitations
 
-Use a persistent-volume-compatible host for the backend and mount a volume at `/data`; configure `DATABASE_URL=sqlite:////data/app.db`, at least two provider keys, `ENABLE_FAILURE_SIMULATION=true`, and `ALLOWED_ORIGINS` to the exact public frontend origin. Build the frontend with `VITE_API_URL` set to the public HTTPS API origin. Verify the URLs and run `scripts/verify_live.py` before publishing them here.
+Railway hosts the backend with a volume mounted at `/data`. Configure `DATABASE_URL=sqlite:////data/app.db`, at least two provider keys, `ENABLE_FAILURE_SIMULATION=true`, and `ALLOWED_ORIGINS` to the exact public frontend origin. Build the frontend with `VITE_API_URL` set to the public HTTPS API origin. After changing a Vite environment variable rebuild the client. Compare its browser requests with the API URL above.
 
 The local LiteLLM cache and striped locks are in-memory/process-local. Run one backend worker and one replica for the demonstrated ordering and cache guarantees. Public evaluation endpoints are unauthenticated by assignment design; use low-quota demo credentials, do not enter private data, and disable failure simulation after evaluation. CORS alone is not authentication.
+
+
+### Request-local failover from PowerShell
+
+```powershell
+$api = 'https://relay-backend-production-4a042940.up.railway.app'
+$sid = [guid]::NewGuid().ToString()
+$body = @{ session_id = $sid; message = 'Name one primary color.' } | ConvertTo-Json
+$reply = Invoke-RestMethod "$api/chat" -Method Post -ContentType 'application/json' -Headers @{'X-Simulate-Failure'='key_1=429'} -Body $body
+$reply | ConvertTo-Json -Depth 5
+Invoke-RestMethod "$api/sessions/$sid/messages" | ConvertTo-Json -Depth 6
+```
+
+A successful fallback reports `LIVE_INFERENCE`, `key_2` and one previous failure. Replace the header value with `*=429` to obtain HTTP 503. A fresh session repeating the same first prompt, with the same system instruction and no failure header, can reuse the cached reply. The input and output token counts belong to the original provider response.
