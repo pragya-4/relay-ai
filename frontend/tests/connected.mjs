@@ -9,6 +9,13 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 try {
   const page = await browser.newPage();
   page.setDefaultTimeout(90000);
+  const pageErrors = [];
+  const apiOrigins = new Set();
+  page.on('pageerror', error => pageErrors.push(error.name));
+  page.on('request', request => {
+    const target = new URL(request.url());
+    if (['/chat', '/health'].includes(target.pathname)) apiOrigins.add(target.origin);
+  });
   await page.goto(url);
   await page.getByText(/\d+ keys configured/).waitFor();
   const input = page.getByTestId('chat-input');
@@ -41,6 +48,14 @@ try {
     'meta-output-tokens': String(live.body.metadata.output_tokens),
     'meta-latency': hit.body.metadata.latency_ms + ' ms',
   })) assert.equal(await reply.getByTestId(id).innerText(), expected);
+  assert.equal(hit.body.metadata.input_tokens, live.body.metadata.input_tokens);
+  assert.equal(hit.body.metadata.output_tokens, live.body.metadata.output_tokens);
+  await page.getByRole('combobox').selectOption('key_1=429');
+  const limited = await send('Name one constellation.');
+  assert.equal(limited.status, 200);
+  assert.ok(limited.body.reply.trim());
+  assert.equal(limited.body.metadata.key_id, 'key_2');
+  assert.equal(limited.body.metadata.fallback_attempts, 1);
   await page.getByRole('combobox').selectOption('key_1=500');
   const fallback = await send('One short greeting.');
   assert.equal(fallback.status, 200);
@@ -51,7 +66,25 @@ try {
   assert.equal(failure.status, 503);
   await page.getByRole('alert').waitFor();
   assert.equal(await input.inputValue(), 'Retry this message.');
-  console.log('PASS connected browser: live, cache, lower cache latency, per-reply metadata, reload, failover and readable 503');
+  const marker = 'cedar-' + randomUUID().slice(0, 8);
+  const recovery = await send('Remember this exact code for the next turn: ' + marker);
+  assert.equal(recovery.status, 200);
+  const recall = await send('What exact code did I ask you to remember?');
+  assert.equal(recall.status, 200);
+  assert.ok(recall.body.reply.includes(marker));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await page.getByTestId('system-prompt-input').waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  const mobile = await send('Say hello. Mobile check ' + randomUUID());
+  assert.equal(mobile.status, 200);
+  await page.getByTestId('meta-output-tokens').waitFor();
+  assert.deepEqual(pageErrors, []);
+  if (process.env.EXPECTED_API_ORIGIN) {
+    assert.deepEqual([...apiOrigins], [process.env.EXPECTED_API_ORIGIN]);
+  }
+  console.log('PASS desktop and mobile: live, cache, tokens, latency, reload, 429/500 failover, 503, recovery and recall');
+  console.log(JSON.stringify({ apiOrigins: [...apiOrigins], live: live.body.metadata, cache: hit.body.metadata }));
 } finally {
   await browser.close();
 }
