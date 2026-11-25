@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type ResolutionSource = 'LIVE_INFERENCE' | 'LLM_CACHE';
 type Metadata = {
@@ -147,7 +149,11 @@ function App() {
           ? <div className="user" key={index}>{message.content}</div>
           : <article className="assistant" data-testid="assistant-message" key={index}>
             <div className="reply-head"><span className="mini">R</span> Relay AI</div>
-            <div className="reply">{message.content}</div>
+            <div className="reply markdown-body">
+             <ReactMarkdown remarkPlugins={[remarkGfm]}>
+             {message.content}
+             </ReactMarkdown>
+            </div>
             <div className="meta">
               <div className="source" data-testid="meta-source">{message.metadata.resolution_source}</div>
               <div data-testid="meta-model">{message.metadata.model}</div>
